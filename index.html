@@ -2,95 +2,44 @@
 <html lang="ja">
 <head>
     <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>MediaPipe × GAS 連携</title>
-    <!-- 1. 単一スクリプトで確実に読み込む公式の方式に修正しました -->
-    <script src="https://jsdelivr.net" crossorigin="anonymous"></script>
+    <title>カメラテスト × GAS連携</title>
 </head>
 <body>
-    <h1>MediaPipe × GAS 連携テスト</h1>
+    <h1>カメラ表示 × GAS送信テスト</h1>
     
+    <!-- 以前成功したカメラ映像の表示エリア -->
     <video id="webcam" autoplay playsinline style="width: 320px; height: 240px; transform: scaleX(-1);"></video>
     <br><br>
-    <button id="sendBtn" disabled>検出結果をGASに送信</button>
-    <p id="status">MediaPipe初期化中...</p>
+    
+    <!-- GASにデータを送るためのボタン -->
+    <button id="sendBtn">現在の状況をGASに送信</button>
+    <p id="status">カメラ起動中...</p>
 
     <script>
-        // 2. グローバルに展開された公式のオブジェクトを直接使用します
-        const { HandLandmarker, FilesetResolver } = mpTasksVision;
-
         const video = document.getElementById('webcam');
         const sendBtn = document.getElementById('sendBtn');
         const statusText = document.getElementById('status');
         
-        // ★ここに先ほどコピーしたGASのウェブアプリURLを貼り付けてください
+        // ★ここにGASで発行したウェブアプリURLを貼り付けてください
         const GAS_URL = "★ここにGASのURLを貼り付ける★";
 
-        let handLandmarker;
-        let lastResult = "手は検出されていません";
+        // 1. 以前成功したカメラの起動処理
+        navigator.mediaDevices.getUserMedia({ video: true })
+            .then((stream) => {
+                video.srcObject = stream;
+                statusText.innerText = "カメラが正常に起動しました！ボタンを押してGASへ送信できます。";
+            })
+            .catch((err) => {
+                statusText.innerText = "カメラの起動に失敗しました: " + err;
+            });
 
-        // MediaPipeの初期化
-        async function initMediaPipe() {
-            try {
-                const vision = await FilesetResolver.forVisionTasks(
-                    "https://googleapis.com"
-                );
-                handLandmarker = await HandLandmarker.createFromOptions(vision, {
-                    baseOptions: {
-                        modelAssetPath: "https://googleapis.com",
-                        delegate: "GPU"
-                    },
-                    runningMode: "VIDEO",
-                    numHands: 2
-                });
-                statusText.innerText = "MediaPipe準備完了！カメラを起動します...";
-                startCamera();
-            } catch (e) {
-                statusText.innerText = "初期化エラー: " + e;
-            }
-        }
-
-        // カメラの起動
-        function startCamera() {
-            navigator.mediaDevices.getUserMedia({ video: true })
-                .then((stream) => {
-                    video.srcObject = stream;
-                    video.addEventListener('loadeddata', predictWebcam);
-                    sendBtn.disabled = false;
-                    statusText.innerText = "カメラ動作中. 手の検出を開始しました。";
-                })
-                .catch((err) => {
-                    statusText.innerText = "カメラの起動に失敗しました: " + err;
-                });
-        }
-
-        // リアルタイム解析ループ
-        let lastVideoTime = -1;
-        async function predictWebcam() {
-            if (video.currentTime !== lastVideoTime) {
-                lastVideoTime = video.currentTime;
-                if (handLandmarker) {
-                    const startTimeMs = performance.now();
-                    const results = handLandmarker.predictForVideo(video, startTimeMs);
-                    
-                    if (results.landmarks && results.landmarks.length > 0) {
-                        lastResult = `手が ${results.landmarks.length} つ検出されています。`;
-                        statusText.innerText = lastResult;
-                    } else {
-                        lastResult = "手は検出されていません";
-                        statusText.innerText = lastResult;
-                    }
-                }
-            }
-            window.requestAnimationFrame(predictWebcam);
-        }
-
-        // GASへの送信処理
+        // 2. ボタンを押したときにGASへテキストを送る処理
         sendBtn.addEventListener('click', async () => {
             statusText.innerText = "GASへ送信中...";
             
+            // GASに送るシンプルなデータ
             const payload = {
-                resultMessage: lastResult
+                resultMessage: "GitHub Pagesからのカメラ連携テスト成功"
             };
 
             try {
@@ -105,17 +54,14 @@
                 
                 const resData = await response.json();
                 if(resData.status === "success") {
-                    statusText.innerText = "🚀 スプレッドシートへの記録に成功しました！";
+                    statusText.innerText = "🚀 スプレッドシートへの書き込みに成功しました！";
                 } else {
-                    statusText.innerText = "❌ GAS側でエラー: " + resData.message;
+                    statusText.innerText = "❌ GAS側でエラーが発生: " + resData.message;
                 }
             } catch (error) {
-                statusText.innerText = "❌ 送信エラー (デプロイ設定やURLを確認してください): " + error;
+                statusText.innerText = "❌ 送信失敗。GASのURLやデプロイ設定（全員になっているか）を確認してください。";
             }
         });
-
-        // 起動
-        initMediaPipe();
     </script>
 </body>
 </html>
