@@ -1,70 +1,118 @@
 <!DOCTYPE html>
 <html lang="ja">
 <head>
-  <meta charset="UTF-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>スマホカメラ表示</title>
-  <style>
-    body {
-      margin: 0;
-      padding: 0;
-      background-color: #121212;
-      color: #ffffff;
-      font-family: sans-serif;
-      display: flex;
-      flex-direction: column;
-      align-items: center;
-      justify-content: center;
-      min-height: 100vh;
-    }
-    h1 {
-      font-size: 1.2rem;
-      margin-bottom: 10px;
-    }
-    .video-container {
-      width: 90%;
-      max-width: 480px;
-      aspect-ratio: 3 / 4;
-      border-radius: 12px;
-      overflow: hidden;
-      box-shadow: 0 4px 10px rgba(0,0,0,0.5);
-      background-color: #000;
-    }
-    video {
-      width: 100%;
-      height: 100%;
-      object-fit: cover;
-    }
-  </style>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>MediaPipe to GAS Link</title>
 </head>
 <body>
+    <h1>MediaPipe × GAS 連携テスト</h1>
+    
+    <video id="webcam" autoplay playsinline style="width: 320px; height: 240px; transform: scaleX(-1);"></video>
+    <br><br>
+    <button id="sendBtn" disabled>検出結果をGASに送信</button>
+    <p id="status">MediaPipe初期化中...</p>
 
-  <h1>スマホカメラテスト</h1>
-  <div class="video-container">
-    <!-- playsinline属性でiPhoneでの全画面強制起動を防ぎます -->
-    <video id="video" autoplay playsinline muted></video>
-  </div>
+    <!-- 拡張子を .mjs に変更して、正しくインポートするように修正しました -->
+    <script type="module">
+        import { HandLandmarker, FilesetResolver } from "https://jsdelivr.net";
 
-  <script>
-    const video = document.getElementById('video');
+        const video = document.getElementById('webcam');
+        const sendBtn = document.getElementById('sendBtn');
+        const statusText = document.getElementById('status');
+        
+        // ★ここに先ほどコピーしたGASのウェブアプリURLを貼り付けてください
+        const GAS_URL = "★ここにGASで発行したウェブアプリURLを貼り付ける★";
 
-    // スマホの外カメラ（背面カメラ）をリクエストする設定
-    const constraints = {
-      video: {
-        facingMode: "environment" // 外カメラを指定（iPhone/Android両対応）
-      },
-      audio: false
-    };
+        let handLandmarker;
+        let lastResult = "手は検出されていません";
 
-    // カメラの起動処理
-    navigator.mediaDevices.getUserMedia(constraints)
-      .then((stream) => {
-        video.srcObject = stream;
-      })
-      .catch((err) => {
-        console.error("カメラのアクセスに失敗しました:", err);
-        alert("カメラの許可が必要です。ブラウザの設定を確認してください。");
-      });
-  </script>
+        // 1. MediaPipe Hand Landmarker の初期化
+        async function initMediaPipe() {
+            try {
+                const vision = await FilesetResolver.forVisionTasks(
+                    "https://jsdelivr.net"
+                );
+                handLandmarker = await HandLandmarker.createFromOptions(vision, {
+                    baseOptions: {
+                        modelAssetPath: "https://googleapis.com",
+                        delegate: "GPU"
+                    },
+                    runningMode: "VIDEO",
+                    numHands: 2
+                });
+                statusText.innerText = "MediaPipe準備完了！カメラを起動します...";
+                startCamera();
+            } catch (e) {
+                statusText.innerText = "初期化エラー: " + e;
+            }
+        }
+
+        // 2. カメラの起動
+        function startCamera() {
+            navigator.mediaDevices.getUserMedia({ video: true })
+                .then((stream) => {
+                    video.srcObject = stream;
+                    video.addEventListener('loadeddata', predictWebcam);
+                    sendBtn.disabled = false;
+                    statusText.innerText = "カメラ動作中。手の検出を開始しました。";
+                })
+                .catch((err) => {
+                    statusText.innerText = "カメラの起動に失敗しました: " + err;
+                });
+        }
+
+        // 3. ループによるリアルタイム解析
+        let lastVideoTime = -1;
+        async function predictWebcam() {
+            if (video.currentTime !== lastVideoTime) {
+                lastVideoTime = video.currentTime;
+                if (handLandmarker) {
+                    const startTimeMs = performance.now();
+                    const results = handLandmarker.predictForVideo(video, startTimeMs);
+                    
+                    if (results.landmarks && results.landmarks.length > 0) {
+                        lastResult = `手が ${results.landmarks.length} つ検出されています。`;
+                        statusText.innerText = lastResult;
+                    } else {
+                        lastResult = "手は検出されていません";
+                        statusText.innerText = lastResult;
+                    }
+                }
+            }
+            window.requestAnimationFrame(predictWebcam);
+        }
+
+        // 4. GASへのデータ送信処理
+        sendBtn.addEventListener('click', async () => {
+            statusText.innerText = "GASへ送信中...";
+            
+            const payload = {
+                resultMessage: lastResult
+            };
+
+            try {
+                const response = await fetch(GAS_URL, {
+                    method: "POST",
+                    mode: "cors",
+                    headers: {
+                        "Content-Type": "text/plain"
+                    },
+                    body: JSON.stringify(payload)
+                });
+                
+                const resData = await response.json();
+                if(resData.status === "success") {
+                    statusText.innerText = "🚀 スプレッドシートへの記録に成功しました！";
+                } else {
+                    statusText.innerText = "❌ GAS側でエラー: " + resData.message;
+                }
+            } catch (error) {
+                statusText.innerText = "❌ 送信エラー (デプロイ設定やURLを確認してください): " + error;
+            }
+        });
+
+        // 起動
+        initMediaPipe();
+    </script>
 </body>
-</html>
