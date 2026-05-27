@@ -3,7 +3,9 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>MediaPipe to GAS Link</title>
+    <title>MediaPipe × GAS 連携</title>
+    <!-- 1. 単一スクリプトで確実に読み込む公式の方式に修正しました -->
+    <script src="https://jsdelivr.net" crossorigin="anonymous"></script>
 </head>
 <body>
     <h1>MediaPipe × GAS 連携テスト</h1>
@@ -13,25 +15,25 @@
     <button id="sendBtn" disabled>検出結果をGASに送信</button>
     <p id="status">MediaPipe初期化中...</p>
 
-    <!-- 拡張子を .mjs に変更して、正しくインポートするように修正しました -->
-    <script type="module">
-        import { HandLandmarker, FilesetResolver } from "https://jsdelivr.net";
+    <script>
+        // 2. グローバルに展開された公式のオブジェクトを直接使用します
+        const { HandLandmarker, FilesetResolver } = mpTasksVision;
 
         const video = document.getElementById('webcam');
         const sendBtn = document.getElementById('sendBtn');
         const statusText = document.getElementById('status');
         
         // ★ここに先ほどコピーしたGASのウェブアプリURLを貼り付けてください
-        const GAS_URL = "★ここにGASで発行したウェブアプリURLを貼り付ける★";
+        const GAS_URL = "★ここにGASのURLを貼り付ける★";
 
         let handLandmarker;
         let lastResult = "手は検出されていません";
 
-        // 1. MediaPipe Hand Landmarker の初期化
+        // MediaPipeの初期化
         async function initMediaPipe() {
             try {
                 const vision = await FilesetResolver.forVisionTasks(
-                    "https://jsdelivr.net"
+                    "https://googleapis.com"
                 );
                 handLandmarker = await HandLandmarker.createFromOptions(vision, {
                     baseOptions: {
@@ -48,21 +50,21 @@
             }
         }
 
-        // 2. カメラの起動
+        // カメラの起動
         function startCamera() {
             navigator.mediaDevices.getUserMedia({ video: true })
                 .then((stream) => {
                     video.srcObject = stream;
                     video.addEventListener('loadeddata', predictWebcam);
                     sendBtn.disabled = false;
-                    statusText.innerText = "カメラ動作中。手の検出を開始しました。";
+                    statusText.innerText = "カメラ動作中. 手の検出を開始しました。";
                 })
                 .catch((err) => {
                     statusText.innerText = "カメラの起動に失敗しました: " + err;
                 });
         }
 
-        // 3. ループによるリアルタイム解析
+        // リアルタイム解析ループ
         let lastVideoTime = -1;
         async function predictWebcam() {
             if (video.currentTime !== lastVideoTime) {
@@ -83,7 +85,7 @@
             window.requestAnimationFrame(predictWebcam);
         }
 
-        // 4. GASへのデータ送信処理
+        // GASへの送信処理
         sendBtn.addEventListener('click', async () => {
             statusText.innerText = "GASへ送信中...";
             
@@ -116,3 +118,4 @@
         initMediaPipe();
     </script>
 </body>
+</html>
